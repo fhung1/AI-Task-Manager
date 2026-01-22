@@ -1,16 +1,26 @@
 import { useState, useEffect } from "react";
-import type { Task, TaskCreate } from "./types";
-import { fetchTasks, createTask, deleteTask } from "./api";
+import type { Task, TaskCreate, UserLogin, UserRegister } from "./types";
+import { fetchTasks, createTask, deleteTask, login, register, logout, isAuthenticated } from "./api";
 
 function App() {
+  const [authenticated, setAuthenticated] = useState<boolean>(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+  const [showRegister, setShowRegister] = useState<boolean>(false);
+  const [username, setUsername] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
 
   useEffect(() => {
-    loadTasks();
+    const auth = isAuthenticated();
+    setAuthenticated(auth);
+    if (auth) {
+      loadTasks();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const loadTasks = async () => {
@@ -21,9 +31,63 @@ function App() {
       setTasks(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
+      if (err instanceof Error && err.message.includes("Unauthorized")) {
+        setAuthenticated(false);
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    try {
+      setError(null);
+      const loginData: UserLogin = {
+        username: username.trim(),
+        password: password,
+      };
+      const tokenResponse = await login(loginData);
+      localStorage.setItem("access_token", tokenResponse.access_token);
+      setAuthenticated(true);
+      setUsername("");
+      setPassword("");
+      await loadTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to login");
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    try {
+      setError(null);
+      const registerData: UserRegister = {
+        username: username.trim(),
+        password: password,
+      };
+      await register(registerData);
+      const loginData: UserLogin = {
+        username: username.trim(),
+        password: password,
+      };
+      const tokenResponse = await login(loginData);
+      localStorage.setItem("access_token", tokenResponse.access_token);
+      setAuthenticated(true);
+      setUsername("");
+      setPassword("");
+      await loadTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register");
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setAuthenticated(false);
+    setTasks([]);
+    setUsername("");
+    setPassword("");
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -42,6 +106,9 @@ function App() {
       setDescription("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
+      if (err instanceof Error && err.message.includes("Unauthorized")) {
+        setAuthenticated(false);
+      }
     }
   };
 
@@ -52,6 +119,9 @@ function App() {
       setTasks(tasks.filter((task) => task.id !== taskId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete task");
+      if (err instanceof Error && err.message.includes("Unauthorized")) {
+        setAuthenticated(false);
+      }
     }
   };
 
@@ -67,9 +137,187 @@ function App() {
     return "#10b981";
   };
 
+  if (!authenticated) {
+    return (
+      <div style={{ maxWidth: "400px", margin: "0 auto", padding: "2rem" }}>
+        <h1 style={{ marginBottom: "2rem", textAlign: "center" }}>AI Task Manager</h1>
+        
+        {!showRegister ? (
+          <div>
+            <h2 style={{ marginBottom: "1rem" }}>Login</h2>
+            <form onSubmit={handleLogin} style={{ marginBottom: "1rem" }}>
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    fontSize: "1rem",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    fontSize: "1rem",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                style={{
+                  width: "100%",
+                  padding: "0.5rem 1rem",
+                  fontSize: "1rem",
+                  backgroundColor: "#3b82f6",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  marginBottom: "1rem",
+                }}
+              >
+                Login
+              </button>
+            </form>
+            <p style={{ textAlign: "center" }}>
+              Don't have an account?{" "}
+              <button
+                onClick={() => setShowRegister(true)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#3b82f6",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Register
+              </button>
+            </p>
+          </div>
+        ) : (
+          <div>
+            <h2 style={{ marginBottom: "1rem" }}>Register</h2>
+            <form onSubmit={handleRegister} style={{ marginBottom: "1rem" }}>
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    fontSize: "1rem",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    fontSize: "1rem",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                style={{
+                  width: "100%",
+                  padding: "0.5rem 1rem",
+                  fontSize: "1rem",
+                  backgroundColor: "#3b82f6",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  marginBottom: "1rem",
+                }}
+              >
+                Register
+              </button>
+            </form>
+            <p style={{ textAlign: "center" }}>
+              Already have an account?{" "}
+              <button
+                onClick={() => setShowRegister(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#3b82f6",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Login
+              </button>
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              padding: "1rem",
+              backgroundColor: "#fee2e2",
+              color: "#991b1b",
+              borderRadius: "4px",
+              marginTop: "1rem",
+            }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: "800px", margin: "0 auto", padding: "2rem" }}>
-      <h1 style={{ marginBottom: "2rem" }}>AI Task Manager</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+        <h1 style={{ margin: 0 }}>AI Task Manager</h1>
+        <button
+          onClick={handleLogout}
+          style={{
+            padding: "0.5rem 1rem",
+            fontSize: "0.875rem",
+            backgroundColor: "#6b7280",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          Logout
+        </button>
+      </div>
 
       <form onSubmit={handleSubmit} style={{ marginBottom: "2rem" }}>
         <div style={{ marginBottom: "1rem" }}>

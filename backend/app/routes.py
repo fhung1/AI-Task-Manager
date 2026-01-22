@@ -5,8 +5,9 @@ import os
 import logging
 import openai
 from dotenv import load_dotenv
-from app import models, schemas
+from app import schemas
 from app.database import get_db
+from app.auth import get_current_user
 
 load_dotenv()
 
@@ -88,18 +89,30 @@ def calculate_priority_score_fallback(title: str, description: str) -> float:
 
 
 @router.get("/tasks", response_model=List[schemas.TaskResponse])
-def get_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    tasks = db.query(models.Task).offset(skip).limit(limit).all()
+def get_tasks(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    from app import models
+    tasks = db.query(models.Task).filter(models.Task.owner_id == current_user.id).offset(skip).limit(limit).all()
     return tasks
 
 
 @router.post("/tasks", response_model=schemas.TaskResponse, status_code=201)
-async def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
+async def create_task(
+    task: schemas.TaskCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    from app import models
     priority_score = await calculate_priority_score_ai(task.title, task.description or "")
     db_task = models.Task(
         title=task.title,
         description=task.description,
-        priority_score=priority_score
+        priority_score=priority_score,
+        owner_id=current_user.id
     )
     db.add(db_task)
     db.commit()
@@ -108,8 +121,16 @@ async def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    from app import models
+    db_task = db.query(models.Task).filter(
+        models.Task.id == task_id,
+        models.Task.owner_id == current_user.id
+    ).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     db.delete(db_task)
